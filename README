@@ -1,4 +1,4 @@
-Debgraph, a program like debtree to view ALL the Debian packages on your system.
+Debgraph, a program like debtree to view ALL the Debian packages on your system. In development. Supports GEXF and DOT (Graphviz) outputs.
 
 License
     See COPYING
@@ -12,7 +12,7 @@ Usage
 Output Format
     head debian.dot
 
-```
+```dot
 digraph Debian {
 "adduser" [label="adduser"];
 "adwaita-icon-theme" [label="adwaita-icon-theme"];
