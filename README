@@ -1,0 +1,27 @@
+Debgraph, a program like debtree to view ALL the Debian packages on your system.
+
+License
+    See COPYING
+
+Installation
+    pip install debgraph
+
+Usage
+    debgraph
+
+Output Format
+    head debian.dot
+
+```
+digraph Debian {
+"adduser" [label="adduser"];
+"adwaita-icon-theme" [label="adwaita-icon-theme"];
+"alsa-topology-conf" [label="alsa-topology-conf"];
+"alsa-ucm-conf" [label="alsa-ucm-conf"];
+"apparmor" [label="apparmor"];
+"apport" [label="apport"];
+"apport-core-dump-handler" [label="apport-core-dump-handler"];
+"apport-symptoms" [label="apport-symptoms"];
+"appstream" [label="appstream"];
+...
+```
