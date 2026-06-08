@@ -1,0 +1,9 @@
+[project]
+name = "debgraph"
+version = "0.1.0"
+description = "Generates a graph of your debian packages"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+debgraph = "debgraph.debgraph:main"
