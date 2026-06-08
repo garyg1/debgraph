@@ -3,3 +3,4 @@ venv
 build
 __pycache__
 debgraph.egg-info
+debian.dot

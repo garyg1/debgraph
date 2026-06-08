@@ -1,11 +1,13 @@
-# dpkg-query -W -f='"${binary:Package}","${Version}","${Depends}","${Maintainer}"\n'
+from __future__ import annotations
 
+import collections
 import subprocess
 import sys
 import csv
 import io
 import re
 import json
+from typing import List, Optional, Dict
 
 class GenericEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -21,6 +23,12 @@ class PackageRef:
         return json.dumps(self.__dict__, cls=GenericEncoder)
 
 
+class PackageDependencyAlt:
+    def __init__(self, alts: List[PackageRef]):
+        self.alts = alts
+        self.actual: Optional[Package] = None
+
+    
 class Package:
     fields = [
         'binary:Package',
@@ -32,15 +40,19 @@ class Package:
     _pkgref_re = r"(?P<name>[a-zA-Z0-9\+\-\._]+)\s*(\(\s*(?P<op>(\=|\>\=|\>\>|\<\=|\<\<))\s*(?P<version>[^\)]+)\s*\))?"
 
     def __init__(self):
-        pass
+        self.name: Optional[str] = None
+        self.version: Optional[str] = None
+        self.dependencies: List[PackageDependencyAlt] = []
+        self.provides: List[PackageRef] = []
+        self.maintainer: Optional[str] = None 
 
     @classmethod
     def from_dict(cls, dict):
         new = Package()
-        new.package = dict['binary:Package']
+        new.name = dict['binary:Package']
         new.version= dict['Version']
-        new.dependencies = cls.parse_package_refs(dict['Depends'])
-        new.provides = cls.parse_package_refs(dict['Provides'])
+        new.dependencies = list(map(PackageDependencyAlt, cls.parse_package_refs(dict['Depends'])))
+        new.provides = cls.flatten(cls.parse_package_refs(dict['Provides']))
         new.maintainer = dict['Maintainer']
         return new
 
@@ -77,8 +89,14 @@ class Package:
                 refs.append(ref)
         return refs
 
+    @staticmethod
+    def flatten(l):
+        return [x for sublist in l for x in sublist]
+
     def __repr__(self):
         return json.dumps(self.__dict__, cls=GenericEncoder)
+
+
 
 def main():
     result = subprocess.run(
@@ -94,14 +112,50 @@ def main():
     
     reader = csv.DictReader(io.StringIO(result.stdout), fieldnames=Package.fields)
 
-    for pkg in list(reader)[:10]:
-        package = Package.from_dict(pkg)
-        print(package)
+    packages: Dict[str, Package] = {}
+    for dict_ in reader:
+        package = Package.from_dict(dict_)
+        assert package.name not in packages
+        packages[package.name] = package
     
-
+    providers = collections.defaultdict(list)
+    for package in packages.values():
+        for provided in package.provides:
+            providers[provided.name].append(package)
+        
+        
     # for each dependency find which actually provides it
+    for package in packages.values():
+        for alt in package.dependencies:
+            for requested in alt.alts:
+                if requested.name in packages:
+                    alt.actual = packages[requested.name]
+                    break
+                if requested.name in providers:
+                    alt.actual = providers[requested.name][0]
+                    break
 
     # render the dotfile
+    # graphviz library tries to position them which is not useful
+    # so write to stdout
+    output = [
+        "digraph Debian {"
+    ]
+
+    for package in packages.values():
+        output.append(f'"{package.name}" [label="{package.name}"];')
+    
+    for package in packages.values():
+        for alt in package.dependencies:
+            if alt.actual is not None:
+                output.append(f'"{package.name}" -> "{alt.actual.name}";')
+
+    output.append("}")
+
+    with open('debian.dot', 'w') as fout:
+        fout.write('\n'.join(output))
+
+
 
 def test():
     tests = [
