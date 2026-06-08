@@ -99,6 +99,9 @@ def main():
         print(package)
     
 
+    # for each dependency find which actually provides it
+
+    # render the dotfile
 
 def test():
     tests = [
