@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 from xml.sax.saxutils import escape, quoteattr
+import graphviz
 
 
 class GenericEncoder(json.JSONEncoder):
@@ -50,17 +51,51 @@ class PackageRef:
 class PackageDependencyAlt:
     def __init__(self, alts: List[PackageRef]):
         self.alts = alts
-        self.actual: Optional[Package] = None
+        self.actuals: List[Package] = []
+
+    def register_actual(self, actual: Package):
+        # use list scan to simplify serialization
+        if actual not in self.actuals:
+            self.actuals.append(actual)
+
+    def __repr__(self):
+        return json.dumps(self.__dict__, cls=GenericEncoder)
+
+
+def identity_mapper(s: str) -> str:
+    return s
+
+
+def alt_syntax_mapper(s: str) -> str:
+    if s is None:
+        return None
+    serialized = Package.parse_package_refs(s)
+    return str(serialized)
 
 
 class Package:
     id = 1
-    fields = [
+    _fields = [
         "binary:Package",
-        "Version",
         "Depends",
-        "Provides",
-        "Maintainer",
+    ]
+    _extra_field_mapping = [
+        ("binary:Synopsis", "binary:Synopsis", identity_mapper),
+        ("Breaks", "Breaks", alt_syntax_mapper),
+        # ("Description", "Description", identity_mapper),
+        ("Enhances", "Enhances", alt_syntax_mapper),
+        ("Installed-Size", "InstalledSizeKB", identity_mapper),
+        ("Essential", "IsEssential", identity_mapper),
+        ("Maintainer", "Maintainer", identity_mapper),
+        ("Origin", "Origin", identity_mapper),
+        ("Provides", "Provides", alt_syntax_mapper),
+        ("Recommends", "Recommends", alt_syntax_mapper),
+        ("Replaces", "Replaces", alt_syntax_mapper),
+        ("Section", "Section", identity_mapper),
+        ("source:Package", "source:Package", identity_mapper),
+        ("source:Version", "source:Version", identity_mapper),
+        ("Suggests", "Suggests", alt_syntax_mapper),
+        ("Version", "Version", identity_mapper),
     ]
     _pkgref_re = r"(?P<name>[a-zA-Z0-9\+\-\._]+)\s*(\(\s*(?P<op>(\=|\>\=|\>\>|\<\=|\<\<))\s*(?P<version>[^\)]+)\s*\))?"
 
@@ -71,18 +106,37 @@ class Package:
         self.version: Optional[str] = None
         self.dependencies: List[PackageDependencyAlt] = []
         self.provides: List[PackageRef] = []
-        self.maintainer: Optional[str] = None
+        self.extra: collections.defaultdict[str, Optional[str]] = (
+            collections.defaultdict(None)
+        )
 
     @classmethod
-    def from_dict(cls, dict):
-        new = Package()
+    def get_all_dpkg_fields(cls):
+        fields = [
+            *cls._fields,
+            *(dpkg_name for dpkg_name, _, _ in cls._extra_field_mapping),
+        ]
+        return fields
+
+    @classmethod
+    def get_all_extra_output_fields(cls):
+        return [output_name for _, output_name, _ in cls._extra_field_mapping]
+
+    @classmethod
+    def from_dict(cls, dict: Dict[str, str]):
+        new = cls()
         new.name = dict["binary:Package"]
         new.version = dict["Version"]
-        new.dependencies = list(
-            map(PackageDependencyAlt, cls.parse_package_refs(dict["Depends"]))
-        )
+        new.dependencies = [
+            PackageDependencyAlt(altlist)
+            for altlist in cls.parse_package_refs(dict["Depends"])
+        ]
         new.provides = cls.flatten(cls.parse_package_refs(dict["Provides"]))
-        new.maintainer = dict["Maintainer"]
+
+        new.extra["Version"] = new.version
+        for dpkg_field, output_field, map_fn in cls._extra_field_mapping:
+            new.extra[output_field] = map_fn(dict.get(dpkg_field))
+
         return new
 
     @classmethod
@@ -126,13 +180,21 @@ class Package:
 
 
 def get_dpkg_data():
+    # dpkg-query doesn't have a way of escaping CSV, so we use magic strings
+    # in order to produce machine-readable output.
+    start_entry_delimiter = "[[debgraph magic start entry]]"
+    comma_delimiter = "[[debgraph magic comma]]"
+    cmd = [
+        "dpkg-query",
+        "--show",
+        "--showformat",
+        start_entry_delimiter
+        + comma_delimiter.join(
+            ("${" + field + "}" for field in Package.get_all_dpkg_fields())
+        ),
+    ]
     result = subprocess.run(
-        [
-            "dpkg-query",
-            "--show",
-            "--showformat",
-            ",".join(('"${' + field + '}"' for field in Package.fields)) + "\n",
-        ],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -142,9 +204,21 @@ def get_dpkg_data():
         print(f"Failed: {result.returncode} {result.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    reader = csv.DictReader(io.StringIO(result.stdout), fieldnames=Package.fields)
-    for dict_ in reader:
-        yield Package.from_dict(dict_)
+    i = 0
+    s = result.stdout
+    while i < len(s):
+        next_idx = s.find(start_entry_delimiter, i)
+        if next_idx == -1:
+            next_idx = len(s)
+        package_entry = s[i:next_idx]
+        values = package_entry.split(comma_delimiter)
+        if len(values) == len(Package.get_all_dpkg_fields()):
+            dict_ = {
+                field: val for field, val in zip(Package.get_all_dpkg_fields(), values)
+            }
+            yield Package.from_dict(dict_)
+
+        i = next_idx + len(start_entry_delimiter)
 
 
 def postprocess_packages(packages: Dict[str, Package]):
@@ -153,34 +227,28 @@ def postprocess_packages(packages: Dict[str, Package]):
         for provided in package.provides:
             providers[provided.name].append(package)
 
-    # for each dependency find which actually provides it
+    # for each dependency find the one(s) that actually provides it
     for package in packages.values():
         for alt in package.dependencies:
             for requested in alt.alts:
                 if requested.name in packages:
-                    alt.actual = packages[requested.name]
-                    break
+                    alt.register_actual(packages[requested.name])
                 if requested.name in providers:
-                    alt.actual = providers[requested.name][0]
-                    break
+                    alt.register_actual(providers[requested.name][0])
 
 
 def write_dotfile(fout: io.TextIOWrapper, packages: Iterable[Package]):
-    # render the dotfile
-    # graphviz library tries to position them which is not useful here
-    # so we manually construct
-    output = ["digraph Debian {"]
+    dot = graphviz.Digraph("Debian")
 
     for package in packages:
-        output.append(f'"{package.name}" [label="{package.name}"];')
+        dot.node(package.name, label=package.name, _attributes=package.extra)
 
     for package in packages:
         for alt in package.dependencies:
-            if alt.actual is not None:
-                output.append(f'"{package.name}" -> "{alt.actual.name}";')
+            for actual in alt.actuals:
+                dot.edge(package.name, actual.name, label=str(alt.alts))
 
-    output.append("}")
-    fout.write("\n".join(output))
+    fout.write(dot.source)
 
 
 def write_gexf(fout: io.TextIOWrapper, packages: Iterable[Package]):
@@ -189,22 +257,49 @@ def write_gexf(fout: io.TextIOWrapper, packages: Iterable[Package]):
     description = "A graph of apt packages on a Debian system."
     nodes = []
     edges = []
+    node_attributes = []
+    edge_attributes = []
+
+    field_to_index = {
+        field: idx for idx, field in enumerate(Package.get_all_extra_output_fields())
+    }
+    for idx, field in enumerate(Package.get_all_extra_output_fields()):
+        node_attributes.append(
+            f"""            <attribute id="{idx}" title="{field}" type="string"/>"""
+        )
+
+    edge_attributes.append(
+        f"""            <attribute id="0" title="alts" type="string"/>"""
+    )
 
     for package in packages:
+        attvalues = []
+        for field, value in package.extra.items():
+            attvalues.append(
+                f"""                    <attvalue for="{field_to_index[field]}" value={quoteattr(value)} />"""
+            )
         nodes.append(
             f"""            <node id="{package.id}" label={quoteattr(package.name)}>
                 <attvalues>
-                    <attvalue for="0" value={quoteattr(package.maintainer)}/>
+{'\n'.join(attvalues)}
                 </attvalues>
             </node>"""
         )
 
     for package in packages:
         for alt in package.dependencies:
-            if alt.actual is not None:
-                edges.append(f"""            <edge 
-                source="{package.id}"
-                target="{alt.actual.id}" />""")
+            for actual in alt.actuals:
+                attvalues = []
+                attvalues.append(
+                    f"""                    <attvalue for="0" value={quoteattr(str(alt.alts))} />"""
+                )
+                edges.append(
+                    f"""            <edge source="{package.id}" target="{actual.id}">
+                <attvalues>
+{'\n'.join(attvalues)}
+                </attvalues>
+            </edge>"""
+                )
 
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <gexf xmlns="http://www.gexf.net/1.3" version="1.3" xmlns:viz="http://www.gexf.net/1.3/viz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.gexf.net/1.3 http://www.gexf.net/1.3/gexf.xsd">
@@ -214,7 +309,10 @@ def write_gexf(fout: io.TextIOWrapper, packages: Iterable[Package]):
     </meta>
     <graph defaultedgetype="directed" idtype="string" type="static">
         <attributes class="node">
-            <attribute id="0" title="maintainer" type="string"/>
+{'\n'.join(node_attributes)}
+        </attributes>
+        <attributes class="edge">
+{'\n'.join(edge_attributes)}
         </attributes>
         <nodes count="{len(nodes)}">
 {'\n'.join(nodes)}
