@@ -284,7 +284,7 @@ class DpkgReader:
                     if requested.name in providers:
                         alt.register_actual(providers[requested.name][0])
 
-
+SEP = '\n'
 class GraphFileWriter:
     @staticmethod
     def _write_jsonl(fout: io.TextIOWrapper, packages: Iterable[Package]):
@@ -335,7 +335,7 @@ class GraphFileWriter:
             nodes.append(
                 f"""            <node id="{package.id}" label={quoteattr(package.name)}>
                 <attvalues>
-{'\n'.join(attvalues)}
+{SEP.join(attvalues)}
                 </attvalues>
                 </node>"""
             )
@@ -350,7 +350,7 @@ class GraphFileWriter:
                     edges.append(
                         f"""            <edge source="{package.id}" target="{actual.id}">
                 <attvalues>
-{'\n'.join(attvalues)}
+{SEP.join(attvalues)}
                 </attvalues>
                 </edge>"""
                     )
@@ -364,19 +364,19 @@ class GraphFileWriter:
 
     <graph defaultedgetype="directed" idtype="string" type="static">
         <attributes class="node">
-{'\n'.join(node_attributes)}
+{SEP.join(node_attributes)}
         </attributes>
 
         <attributes class="edge">
-{'\n'.join(edge_attributes)}
+{SEP.join(edge_attributes)}
         </attributes>
 
         <nodes count="{len(nodes)}">
-{'\n'.join(nodes)}
+{SEP.join(nodes)}
         </nodes>
 
         <edges>
-{'\n'.join(edges)}
+{SEP.join(edges)}
         </edges>
     </graph>
 </gexf>"""
