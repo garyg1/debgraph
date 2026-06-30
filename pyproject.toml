@@ -16,4 +16,4 @@ Issues = "https://github.com/garyg1/debgraph/issues"
 debgraph = "debgraph.debgraph:main"
 
 [project.optional-dependencies]
-tests = ["pytest"]
+tests = ["pytest", "black"]

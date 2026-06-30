@@ -34,14 +34,19 @@ import graphviz
 
 __version__ = "0.2.0"
 
+
 class GenericEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, PackageDependencyAlternatives):
             return {
                 **obj.__dict__,
-                "actuals": [{ "name": actual.name, "version": actual.version } for actual in obj.actuals],
+                "actuals": [
+                    {"name": actual.name, "version": actual.version}
+                    for actual in obj.actuals
+                ],
             }
         return obj.__dict__
+
 
 class DebgraphError(Exception):
     def __init__(self, message, posix_status):
@@ -49,12 +54,14 @@ class DebgraphError(Exception):
         self.message = message
         super().__init__(message)
 
+
 class PackageDependency:
     """
     Represents a dpkg package dependency, such as "apt-transport-https (= 3.2.0)".
 
     See: https://www.debian.org/doc/debian-policy/ch-relationships.html.
     """
+
     def __init__(self, name, op=None, version=None):
         self.name = name
         self.op = op
@@ -70,6 +77,7 @@ class PackageDependencyAlternatives:
 
     See: https://www.debian.org/doc/debian-policy/ch-relationships.html.
     """
+
     def __init__(self, alts: List[PackageDependency]):
         self.alts = alts
         self.actuals: List[Package] = []
@@ -101,6 +109,7 @@ class Package:
 
     See: https://www.debian.org/doc/debian-policy/ch-binary.html
     """
+
     _id = 1
     _fields = [
         "binary:Package",
@@ -123,6 +132,9 @@ class Package:
         ("source:Version", "source:Version", _identity_mapper, "string"),
         ("Suggests", "Suggests", _alt_syntax_mapper, "string"),
         ("Version", "Version", _identity_mapper, "string"),
+    ]
+    _long_fields = [
+        "Description",
     ]
     _pkgref_re = r"(?P<name>[a-zA-Z0-9\+\-\._]+)\s*(\(\s*(?P<op>(\=|\>\=|\>\>|\<\=|\<\<))\s*(?P<version>[^\)]+)\s*\))?"
 
@@ -148,20 +160,19 @@ class Package:
 
     @classmethod
     def get_all_extra_output_fields(cls):
-        return [(output_name, output_type) for _, output_name, _, output_type in cls._extra_field_mapping]
-
+        return [
+            (output_name, output_type)
+            for _, output_name, _, output_type in cls._extra_field_mapping
+        ]
 
     def __repr__(self):
         return json.dumps(self.__dict__, cls=GenericEncoder)
 
     def get_no_dep_repr(self):
-        return {
-            "name": self.name,
-            "version": self.version
-        }
+        return {"name": self.name, "version": self.version}
 
     @classmethod
-    def _from_dict(cls, dict: Dict[str, str]):
+    def _from_dict(cls, dict: Dict[str, str], long_fields: bool):
         new = cls()
         new.name = dict["binary:Package"]
         new.version = dict["Version"]
@@ -172,7 +183,11 @@ class Package:
         new.provides = cls._flatten(cls._parse_package_refs(dict["Provides"]))
 
         for dpkg_field, output_field, map_fn, _ in cls._extra_field_mapping:
+            if not long_fields and dpkg_field in cls._long_fields:
+                continue
+
             new.extra[output_field] = map_fn(dict.get(dpkg_field))
+
         new.extra["Version"] = new.version
 
         return new
@@ -213,6 +228,7 @@ class Package:
     def _flatten(l):
         return [x for sublist in l for x in sublist]
 
+
 class DpkgReader:
     start_entry_delimiter = "[[debgraph magic start entry]]\n"
     comma_delimiter = "[[debgraph magic comma]]\n"
@@ -240,12 +256,11 @@ class DpkgReader:
 
         if result.returncode != 0:
             print(f"Failed: {result.returncode} {result.stderr}", file=sys.stderr)
-            
 
         return result.stdout
-    
+
     @classmethod
-    def _parse_dpkg_stdout(cls, s: str) -> List[Package]:
+    def _parse_dpkg_stdout(cls, s: str, long_fields: bool) -> List[Package]:
         i = 0
         packages = {}
         while i < len(s):
@@ -256,15 +271,19 @@ class DpkgReader:
             values = package_entry.split(cls.comma_delimiter)
             if len(values) == len(Package.get_all_dpkg_fields()):
                 dict_ = {
-                    field: val for field, val in zip(Package.get_all_dpkg_fields(), values)
+                    field: val
+                    for field, val in zip(Package.get_all_dpkg_fields(), values)
                 }
-                package = Package._from_dict(dict_)
+                package = Package._from_dict(dict_, long_fields=long_fields)
                 if package.name in packages:
-                    raise DebgraphError(f"Found duplicate packages: {package}, {packages[package.name]}", 1)
+                    raise DebgraphError(
+                        f"Found duplicate packages: {package}, {packages[package.name]}",
+                        1,
+                    )
                 packages[package.name] = package
 
             i = next_idx + len(cls.start_entry_delimiter)
-        
+
         cls._postprocess_packages(packages)
         return list(packages.values())
 
@@ -284,7 +303,10 @@ class DpkgReader:
                     if requested.name in providers:
                         alt.register_actual(providers[requested.name][0])
 
-SEP = '\n'
+
+SEP = "\n"
+
+
 class GraphFileWriter:
     @staticmethod
     def _write_jsonl(fout: io.TextIOWrapper, packages: Iterable[Package]):
@@ -315,7 +337,8 @@ class GraphFileWriter:
         edge_attributes = []
 
         field_to_index = {
-            field: idx for idx, (field, _) in enumerate(Package.get_all_extra_output_fields())
+            field: idx
+            for idx, (field, _) in enumerate(Package.get_all_extra_output_fields())
         }
         for idx, (field, type_) in enumerate(Package.get_all_extra_output_fields()):
             node_attributes.append(
@@ -383,24 +406,27 @@ class GraphFileWriter:
 
         fout.write(xml)
 
+
 _supported_formats = {
     "dot": GraphFileWriter._write_dotfile,
     "gexf": GraphFileWriter._write_gexf,
     "jsonl": GraphFileWriter._write_jsonl,
 }
 
+
 def _infer_format(filename: str):
     _, ext = os.path.splitext(filename)
-    format_str = ext[len(os.path.extsep):].lower()
+    format_str = ext[len(os.path.extsep) :].lower()
     if format_str in _supported_formats:
         return format_str
     else:
         raise DebgraphError(
-            f"Could not infer format from {filename} with extension {ext.lower()}, please specify it explictly using -t.", 1
+            f"Could not infer format from {filename} with extension {ext.lower()}, please specify it explictly using -t.",
+            1,
         )
 
 
-def run_debgraph(argv = None, override_input_stream: Optional[str] = None):
+def run_debgraph(argv=None, override_input_stream: Optional[str] = None):
     ap = argparse.ArgumentParser("debgraph")
     ap.add_argument(
         "output", nargs="?", default="debian.dot", help="Name of the output file"
@@ -413,13 +439,22 @@ def run_debgraph(argv = None, override_input_stream: Optional[str] = None):
         help="Output format, can be inferred from --output.",
     )
     ap.add_argument(
-        "-v", "--version", help="Print version and exit.", action='store_true',
+        "-v",
+        "--version",
+        help="Print version and exit.",
+        action="store_true",
+    )
+    ap.add_argument(
+        "-l",
+        "--long",
+        help="Include long fields (Description) in the graph",
+        action="store_true",
     )
     args = ap.parse_args(argv)
 
     if args.version:
         raise DebgraphError(f"Debgraph {__version__}", 0)
-    
+
     # reset numbering for this graph
     Package._id = 1
 
@@ -432,8 +467,12 @@ def run_debgraph(argv = None, override_input_stream: Optional[str] = None):
         print(f"Using format {format}", file=sys.stderr)
     write_fn = _supported_formats[format]
 
-    s = DpkgReader._get_dpkg_stdout() if not override_input_stream else override_input_stream
-    packages = DpkgReader._parse_dpkg_stdout(s)
+    s = (
+        DpkgReader._get_dpkg_stdout()
+        if not override_input_stream
+        else override_input_stream
+    )
+    packages = DpkgReader._parse_dpkg_stdout(s, long_fields=args.long)
 
     os.makedirs(dirname, exist_ok=True)
     with open(output_abs_path, "w") as fout:
@@ -441,12 +480,14 @@ def run_debgraph(argv = None, override_input_stream: Optional[str] = None):
 
     print(f"Finished writing output to {output_abs_path}")
 
+
 def main():
     try:
         run_debgraph()
     except DebgraphError as e:
         print(e.message, file=sys.stdout if e.posix_status == 0 else sys.stderr)
         sys.exit(e.posix_status)
+
 
 if __name__ == "__main__":
     main()
