@@ -1,6 +1,6 @@
 Debgraph, a program like debtree to view all the Debian packages on your system.
 
-Supports GEXF and DOT (Graphviz) outputs.
+Supports GEXF, DOT (Graphviz), and JSON-Lines outputs.
 
 In development. API may change across 0.x versions.
 
@@ -43,6 +43,17 @@ GEXF Example
 
             <attributes class="node">
                 <attribute id="0" title="binary:Synopsis" type="string"/>
+    ...
+
+JSON-Lines Example
+    debgraph debian.jsonl
+
+    head debian.jsonl
+
+    {"id": 1, "name": "adduser", "version": "3.153ubuntu1", "dependencies": ... }
+    {"id": 2, "name": "adwaita-icon-theme", "version": "50.0-1", "dependencies": ... }
+    {"id": 3, "name": "alsa-topology-conf", "version": "1.2.5.1-3build1", "dependencies": ... }
+    {"id": 4, "name": "alsa-ucm-conf", "version": "1.2.15.3-1ubuntu1", "dependencies": ... }
     ...
 
 Development
