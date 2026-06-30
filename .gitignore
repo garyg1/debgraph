@@ -3,5 +3,5 @@ venv
 build
 __pycache__
 debgraph.egg-info
-*.dot
-*.gexf
+dist
+.pytest_cache

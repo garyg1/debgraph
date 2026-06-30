@@ -1,4 +1,8 @@
-Debgraph, a program like debtree to view ALL the Debian packages on your system. In development. Supports GEXF and DOT (Graphviz) outputs.
+Debgraph, a program like debtree to view all the Debian packages on your system.
+
+Supports GEXF and DOT (Graphviz) outputs.
+
+In development. API may change across 0.x versions.
 
 License
     See COPYING
@@ -7,10 +11,10 @@ Installation
     pip install debgraph
 
 Usage
+DOT Example
     debgraph
 
-Output Format
-    $ head debian.dot
+    head debian.dot
 
     digraph Debian {
     "adduser" [label="adduser"];
@@ -24,3 +28,23 @@ Output Format
     "appstream" [label="appstream"];
     ...
 
+GEXF Example
+    debgraph debian.gexf
+
+    head debian.gexf
+
+    <?xml version="1.0" encoding="UTF-8"?>
+        <gexf xmlns="http://www.gexf.net/1.3" version="1.3" xmlns:viz="http://www.gexf.net/1.3/viz" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.gexf.net/1.3 http://www.gexf.net/1.3/gexf.xsd">
+            <meta lastmodifieddate="2026-06-30">
+                <creator>debgraph</creator>
+                <description>A graph of apt packages on a Debian system.</description>
+            </meta>
+            <graph defaultedgetype="directed" idtype="string" type="static">
+
+            <attributes class="node">
+                <attribute id="0" title="binary:Synopsis" type="string"/>
+    ...
+
+Development
+    pip install ".[tests]" .
+    python -m pytest .
