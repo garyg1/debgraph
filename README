@@ -1,8 +1,8 @@
-Debgraph, a program like debtree to view all the Debian packages on your system.
+Debgraph, a program like debtree to view all the Debian packages on your system, in a single graph.
 
-Supports GEXF, DOT (Graphviz), and JSON-Lines outputs.
+Supports GEXF, DOT (Graphviz), and JSON-Lines output.
 
-In development. API may change across 0.x versions.
+In development. Please note that API may change across 0.x versions.
 
 License
     See COPYING
