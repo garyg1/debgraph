@@ -2,7 +2,7 @@ import argparse
 import os
 import pathlib
 import sys
-from debgraph import DpkgReader, GraphFileWriter
+from debgraph import DpkgReader, GraphFileWriter, Options
 
 
 def get_fixtures(name):
@@ -47,10 +47,11 @@ def main():
         in_file.write(s)
 
     packages = DpkgReader._parse_dpkg_stdout(s, args.long)
+    options = Options(use_fixed_dates=True)
 
     for fixture_path, fn in out_fixtures:
         with open(fixture_path, "w") as out_file:
-            fn(out_file, packages)
+            fn(out_file, packages, options)
 
 
 if __name__ == "__main__":

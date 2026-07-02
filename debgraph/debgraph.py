@@ -34,6 +34,8 @@ import graphviz
 
 __version__ = "0.2.0"
 
+_sep = "\n"
+
 
 class GenericEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -304,16 +306,29 @@ class DpkgReader:
                         alt.register_actual(providers[requested.name][0])
 
 
-SEP = "\n"
+class Options:
+    def __init__(
+        self,
+        use_fixed_dates: bool = False,
+        override_input_stream: Optional[str] = None,
+        argv: Optional[List[str]] = None,
+    ):
+        self.use_fixed_dates = use_fixed_dates
+        self.override_input_stream = override_input_stream
+        self.argv = argv
 
 
 class GraphFileWriter:
     @staticmethod
-    def _write_jsonl(fout: io.TextIOWrapper, packages: Iterable[Package]):
+    def _write_jsonl(
+        fout: io.TextIOWrapper, packages: Iterable[Package], options: Options
+    ):
         fout.write("\n".join(map(str, packages)))
 
     @staticmethod
-    def _write_dotfile(fout: io.TextIOWrapper, packages: Iterable[Package]):
+    def _write_dotfile(
+        fout: io.TextIOWrapper, packages: Iterable[Package], options: Options
+    ):
         dot = graphviz.Digraph("Debian")
 
         for package in packages:
@@ -327,8 +342,14 @@ class GraphFileWriter:
         fout.write(dot.source)
 
     @staticmethod
-    def _write_gexf(fout: io.TextIOWrapper, packages: Iterable[Package]):
-        today_iso = date.today().strftime("%Y-%m-%d")
+    def _write_gexf(
+        fout: io.TextIOWrapper, packages: Iterable[Package], options: Options
+    ):
+        today_iso = (
+            "2026-06-30"
+            if options.use_fixed_dates
+            else date.today().strftime("%Y-%m-%d")
+        )
         creator = "debgraph"
         description = "A graph of apt packages on a Debian system."
         nodes = []
@@ -358,7 +379,7 @@ class GraphFileWriter:
             nodes.append(
                 f"""            <node id="{package.id}" label={quoteattr(package.name)}>
                 <attvalues>
-{SEP.join(attvalues)}
+{_sep.join(attvalues)}
                 </attvalues>
                 </node>"""
             )
@@ -373,7 +394,7 @@ class GraphFileWriter:
                     edges.append(
                         f"""            <edge source="{package.id}" target="{actual.id}">
                 <attvalues>
-{SEP.join(attvalues)}
+{_sep.join(attvalues)}
                 </attvalues>
                 </edge>"""
                     )
@@ -387,19 +408,19 @@ class GraphFileWriter:
 
     <graph defaultedgetype="directed" idtype="string" type="static">
         <attributes class="node">
-{SEP.join(node_attributes)}
+{_sep.join(node_attributes)}
         </attributes>
 
         <attributes class="edge">
-{SEP.join(edge_attributes)}
+{_sep.join(edge_attributes)}
         </attributes>
 
         <nodes count="{len(nodes)}">
-{SEP.join(nodes)}
+{_sep.join(nodes)}
         </nodes>
 
         <edges>
-{SEP.join(edges)}
+{_sep.join(edges)}
         </edges>
     </graph>
 </gexf>"""
@@ -426,7 +447,7 @@ def _infer_format(filename: str):
         )
 
 
-def run_debgraph(argv=None, override_input_stream: Optional[str] = None):
+def run_debgraph(options: Options):
     ap = argparse.ArgumentParser("debgraph")
     ap.add_argument(
         "output", nargs="?", default="debian.dot", help="Name of the output file"
@@ -450,7 +471,7 @@ def run_debgraph(argv=None, override_input_stream: Optional[str] = None):
         help="Include long fields (Description) in the graph",
         action="store_true",
     )
-    args = ap.parse_args(argv)
+    args = ap.parse_args(options.argv)
 
     if args.version:
         raise DebgraphError(f"Debgraph {__version__}", 0)
@@ -469,21 +490,22 @@ def run_debgraph(argv=None, override_input_stream: Optional[str] = None):
 
     s = (
         DpkgReader._get_dpkg_stdout()
-        if not override_input_stream
-        else override_input_stream
+        if not options.override_input_stream
+        else options.override_input_stream
     )
     packages = DpkgReader._parse_dpkg_stdout(s, long_fields=args.long)
 
     os.makedirs(dirname, exist_ok=True)
     with open(output_abs_path, "w") as fout:
-        write_fn(fout, packages)
+        write_fn(fout, packages, options)
 
     print(f"Finished writing output to {output_abs_path}")
 
 
 def main():
     try:
-        run_debgraph()
+        options = Options()
+        run_debgraph(options)
     except DebgraphError as e:
         print(e.message, file=sys.stdout if e.posix_status == 0 else sys.stderr)
         sys.exit(e.posix_status)

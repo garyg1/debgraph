@@ -36,8 +36,11 @@ def _test_fixture(fixture: str, *extra_args: str):
             actual_fixture = os.path.join(temp_dir, os.path.split(expected_fixture)[1])
 
             debgraph.run_debgraph(
-                [actual_fixture, *extra_args],
-                override_input_stream=s,
+                debgraph.Options(
+                    use_fixed_dates=True,
+                    override_input_stream=s,
+                    argv=[actual_fixture, *extra_args],
+                )
             )
 
             with open(actual_fixture, "r") as actual, open(
@@ -54,7 +57,7 @@ def test_wsl():
 def test_version():
     e = None
     try:
-        debgraph.run_debgraph(["--version"])
+        debgraph.run_debgraph(debgraph.Options(argv=["--version"]))
     except debgraph.DebgraphError as actual:
         e = actual
 

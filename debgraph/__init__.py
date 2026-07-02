@@ -6,6 +6,7 @@ from .debgraph import (
     PackageDependencyAlternatives,
     PackageDependency,
     DebgraphError,
+    Options,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     PackageDependencyAlternatives,
     PackageDependency,
     DebgraphError,
+    Options,
 ]
