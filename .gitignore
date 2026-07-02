@@ -1,7 +1,9 @@
 out.*
 venv
+test_venv
 build
 __pycache__
 debgraph.egg-info
 dist
 .pytest_cache
+a.sh
